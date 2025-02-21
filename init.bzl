@@ -15,7 +15,6 @@
 """ initializes the bazel_rules_hdl workspace """
 
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
-load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 load("@rules_bison//bison:bison.bzl", "bison_register_toolchains")
 load("@rules_flex//flex:flex.bzl", "flex_register_toolchains")
 load("@rules_m4//m4:m4.bzl", "m4_register_toolchains")
@@ -59,8 +58,6 @@ def init(python_interpreter = None, python_interpreter_target = None):
     install_pip_deps(**install_deps_kwargs)
 
     init_boost()
-
-    protobuf_deps()
 
     bazel_skylib_workspace()
 
