@@ -1,0 +1,9 @@
+module(
+    name = "rules_hdl",
+)
+
+# Versions that are still compatible with bazel 6.
+# repo_name aliases needed to work with the rest of the repo.
+bazel_dep(name = "protobuf", version = "28.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "abseil-cpp", version = "20240116.2", repo_name = "com_google_absl")
+bazel_dep(name = "googletest", version = "1.14.0.bcr.1", repo_name = "com_google_googletest")
