@@ -34,12 +34,14 @@ steps:
     path: /root/.ssh
 
 # Run the build
-- name: gcr.io/cloud-builders/bazel:6.4.0
+- name: gcr.io/cloud-builders/bazel:8.3.1
   entrypoint: 'bash'
   args:
   - '-c'
   - |
     set -e
+    apt-get update
+    apt-get install -y libtinfo5 clang
     BUILD_INVOCATION_ID=$(python3 tools/generate_uuid.py)
     TEST_INVOCATION_ID=$(python3 tools/generate_uuid.py)
     echo STATUS: Reporting logs with build invocation id $$BUILD_INVOCATION_ID and test invocation id $$TEST_INVOCATION_ID to GitHub.
@@ -51,9 +53,11 @@ steps:
     echo STATUS: Reported logs to GitHub.
     EXTRA_BAZEL_ARGS="--build_metadata=USER=${_USERNAME} \
         --config=ciremotebuild \
-        --bes_results_url=https://app.buildbuddy.io/invocation/" \
+        --bes_results_url=https://app.buildbuddy.io/invocation/ \
+        --noshow_progress" \
     EXTRA_BUILD_BAZEL_ARGS="--invocation_id=$$BUILD_INVOCATION_ID" \
-    EXTRA_TEST_BAZEL_ARGS="--invocation_id=$$TEST_INVOCATION_ID" \
+    EXTRA_TEST_BAZEL_ARGS="--invocation_id=$$TEST_INVOCATION_ID \
+                           --test_output=errors" \
         tools/test_everything.py
   timeout: 10800s
   volumes:

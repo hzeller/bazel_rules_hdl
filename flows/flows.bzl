@@ -39,9 +39,33 @@ FlowStepInfo = provider(
     },
 )
 
+def get_rlocation_path(ctx, file):
+    """Returns the path of a file suitable for use with rlocation."""
+    if file.short_path.startswith("../"):
+        return file.short_path[3:]
+
+    # For files in the main repository, Bazel uses the module name as the root directory in runfiles.
+    # We should ideally get this from ctx.workspace_name or similar, but under Bzlmod
+    # it's usually the module name.
+    return ctx.workspace_name + "/" + file.short_path
+
+_BASH_RUNFILES_INIT = """
+# --- begin runfiles.bash initialization v2 ---
+# Copy-pasted from the Bazel Bash runfiles library v2.
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=;
+# --- end runfiles.bash initialization v2 ---
+"""
+
 script_prefix = """
 #!/usr/bin/env bash
-export RUNFILES="${RUNFILES:-$0.runfiles/rules_hdl}"
+""" + _BASH_RUNFILES_INIT + """
+export RUNFILES="${RUNFILES:-$0.runfiles}"
 """
 
 tcl_script_prefix = "set runfiles_dir $::env(RUNFILES)"

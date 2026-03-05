@@ -14,6 +14,7 @@
 
 """Rules for synthesizing (System)Verilog code."""
 
+load("//flows:flows.bzl", "get_rlocation_path", "script_prefix")
 load("//pdk:build_defs.bzl", "StandardCellInfo")
 load("//verilog:defs.bzl", "VerilogInfo", "make_dag_entry", "make_verilog_info")
 
@@ -112,7 +113,7 @@ def _synthesize_design_impl(ctx):
     if ctx.file.early_techmap:
         inputs.append(ctx.file.early_techmap)
 
-    yosys_runfiles_dir = ctx.executable.yosys_tool.path + ".runfiles"
+    inputs.append(ctx.executable.abc_tool)
 
     log_file = ctx.actions.declare_file("{}_yosys_output.log".format(ctx.attr.name))
 
@@ -131,6 +132,7 @@ def _synthesize_design_impl(ctx):
     args = ctx.actions.args()
     args.add("-q")  # quiet mode only errors printed to stderr
     args.add("-Q")  # Don't print header
+    args.add("-T")
     args.add_all("-l", [log_file])  # put output in log file
     args.add_all("-c", [synth_tcl])  # run synthesis tcl script
     if ctx.attr.extra_tcl_command:
@@ -180,10 +182,22 @@ def _synthesize_design_impl(ctx):
         script_env_files["ADDER_MAPPING"] = str(ha_fa_mapping_path)
         inputs.append(ha_fa_mapping[DefaultInfo].files.to_list()[0])
 
+    yosys_share_root = ""
+    tcl_library_dir = ""
+    yosys_runfiles = ctx.attr.yosys_tool[DefaultInfo].default_runfiles.files.to_list()
+    for f in yosys_runfiles:
+        if not yosys_share_root and f.path.endswith("techmap.v"):
+            yosys_share_root = f.dirname + "/"
+        if not tcl_library_dir and f.path.endswith("library/init.tcl"):
+            tcl_library_dir = f.dirname
+
     env = {
-        "ABC": yosys_runfiles_dir + "/edu_berkeley_abc/abc",
-        "YOSYS_DATDIR": yosys_runfiles_dir + "/at_clifford_yosys/techlibs/",
+        "ABC": ctx.executable.abc_tool.path,
+        "TCL_LIBRARY": tcl_library_dir,
+        "YOSYS_DATDIR": yosys_share_root,
     }
+
+    inputs.extend(yosys_runfiles)
 
     if ctx.file.early_techmap:
         script_env_files["EARLY_TECHMAP"] = ctx.file.early_techmap
@@ -203,7 +217,6 @@ def _synthesize_design_impl(ctx):
         executable = ctx.executable.yosys_tool,
         env = env,
         mnemonic = "SynthesizingRTL",
-        toolchain = None,
     )
 
     benchmark_file = _benchmark_synth(ctx, log_file)
@@ -304,35 +317,46 @@ def _synthesize_binary_impl(ctx):
 
     env["OUTPUT"] = "/tmp/{}.v".format(ctx.attr.name)
 
-    script += "#!/usr/bin/env bash\n"
+    script += script_prefix + "\n"
+    script += 'YOSYS=$(rlocation "at_clifford_yosys/yosys")\n'
+    script += 'ABC_BIN=$(rlocation "abc/abc_bin")\n'
+    script += 'TCL_INIT=$(rlocation "tcl_lang/library/init.tcl")\n'
+    script += 'export YOSYS_DATDIR=$(dirname "$YOSYS")/\n'
+    script += 'export ABC="$ABC_BIN"\n'
+    script += 'export TCL_LIBRARY=$(dirname "$TCL_INIT")\n'
 
     for k, v in env.items():
         script += "export {}='{}'\n".format(k, v.short_path if type(v) == "File" else v)
 
-    yosys_runfiles_dir = ctx.executable.yosys_tool.short_path + ".runfiles"
-
-    script += "export YOSYS_DATDIR='{}/at_clifford_yosys/techlibs/'\n".format(yosys_runfiles_dir)
-    yosys = ctx.attr.yosys_tool[DefaultInfo]
-    script += "${{PREFIX_COMMAND}} {} -c {}\n".format(ctx.executable.yosys_tool.short_path, external_info.yosys_script.short_path)
+    synth_tcl_path = get_rlocation_path(ctx, external_info.yosys_script)
+    script += "${{PREFIX_COMMAND}} \"$YOSYS\" -c $(rlocation \"{}\")\n".format(synth_tcl_path)
 
     binary = ctx.actions.declare_file("{}_synth_binary.sh".format(ctx.attr.name))
     ctx.actions.write(binary, script, is_executable = True)
 
+    runfiles = ctx.runfiles(files = [external_info.yosys_script]).merge_all([
+        ctx.runfiles(external_info.inputs),
+        ctx.runfiles([env["UHDM_FLIST"], env["FLIST"]]),
+        ctx.attr._runfiles_lib[DefaultInfo].default_runfiles,
+        ctx.attr.yosys_tool[DefaultInfo].default_runfiles,
+        ctx.attr.abc_tool[DefaultInfo].default_runfiles,
+    ])
+
     return [
         DefaultInfo(
             executable = binary,
-            runfiles = yosys.default_runfiles.merge_all(
-                [
-                    ctx.runfiles(external_info.inputs),
-                    ctx.runfiles([env["UHDM_FLIST"], env["FLIST"]]),
-                ],
-            ),
+            runfiles = runfiles,
         ),
     ]
 
 synthesis_binary = rule(
     implementation = _synthesize_binary_impl,
     attrs = {
+        "abc_tool": attr.label(
+            default = Label("@abc//:abc_bin"),
+            executable = True,
+            cfg = "target",
+        ),
         "synthesize_rtl_rule": attr.label(
             providers = [ExternalSynthesisInfo],
         ),
@@ -340,6 +364,9 @@ synthesis_binary = rule(
             default = Label("@at_clifford_yosys//:yosys"),
             executable = True,
             cfg = "target",
+        ),
+        "_runfiles_lib": attr.label(
+            default = Label("@bazel_tools//tools/bash/runfiles"),
         ),
     },
     executable = True,
@@ -352,6 +379,11 @@ synthesize_rtl = rule(
             default = Label("//synthesis:abc.script"),
             allow_single_file = True,
             doc = "ABC script",
+        ),
+        "abc_tool": attr.label(
+            default = Label("@abc//:abc_bin"),
+            executable = True,
+            cfg = "exec",
         ),
         "adder_mapping": attr.label(
             allow_single_file = True,

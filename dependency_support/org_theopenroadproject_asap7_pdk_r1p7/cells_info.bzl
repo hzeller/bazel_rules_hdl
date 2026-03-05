@@ -14,7 +14,7 @@
 
 """Standard cell options for the ASAP7 7nm predictive PDK."""
 
-load("@rules_hdl//pdk:build_defs.bzl", "StandardCellOptionsInfo", "check_for_each_cells_args")
+load("//pdk:build_defs.bzl", "StandardCellOptionsInfo", "check_for_each_cells_args")
 
 ASAP7_OPTIONS = StandardCellOptionsInfo(
     libraries = [

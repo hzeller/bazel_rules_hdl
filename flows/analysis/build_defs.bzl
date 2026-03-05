@@ -81,6 +81,9 @@ analyze_netlist_step = rule(
             executable = True,
             cfg = "exec",
         ),
+        "_runfiles_lib": attr.label(
+            default = Label("@bazel_tools//tools/bash/runfiles"),
+        ),
     },
 )
 

@@ -19,8 +19,8 @@ def copy(name, src, out):
         name = name,
         srcs = [src],
         outs = [out],
-        cmd = "cp $(SRCS) $@",
-        message = "Copying $(SRCS)",
+        cmd = "cp $< $@",
+        message = "Copying $< to $@",
     )
 
 def touch(name, out, contents = None):

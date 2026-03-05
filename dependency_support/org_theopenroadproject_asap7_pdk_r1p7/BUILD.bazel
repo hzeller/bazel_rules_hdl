@@ -1,4 +1,4 @@
-# Copyright 2023 Antmicro
+# Copyright 2023 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_python//python:defs.bzl", "py_binary")
+package(default_visibility = ["//visibility:public"])
 
-package(
-    default_applicable_licenses = ["//:package_license"],
-    default_visibility = ["//visibility:private"],
-)
-
-py_binary(
-    name = "cocotb_wrapper",
-    srcs = ["cocotb_wrapper.py"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = ["@rules_hdl_pip_deps_to_vendor//cocotb"],
-)
+exports_files(glob(["**"]))

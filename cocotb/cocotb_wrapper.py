@@ -13,6 +13,16 @@
 # limitations under the License.
 
 import argparse
+import sys
+import os
+
+# This is unfortunate. The directory this is run in with directory 'cocotb'
+# in its path. This shadows the pip dep of the same name. We rearrange the path
+# here so the pip dep wins.
+sys.path = (
+    [path for path in sys.path if "site-packages" in path] +
+    [path for path in sys.path if "site-packages" not in path]
+)
 from cocotb.runner import get_runner, check_results_file
 
 

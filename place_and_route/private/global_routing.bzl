@@ -68,8 +68,10 @@ foreach layer_adjustment {global_routing_layer_adjustments} {{
         "report_check_types -max_slew -max_capacitance -max_fanout -violators",
         "report_floating_nets -verbose",
         "report_units",
-        "set_power_activity -input -activity {} -duty 0.5".format(ctx.attr.power_switching_activity),
     ]
+    if ctx.attr.clock_period or ctx.attr.clocks or ctx.file.sdc:
+        open_road_commands.append("set_power_activity -input -activity {} -duty 0.5".format(ctx.attr.power_switching_activity))
+
     open_road_commands.extend(generate_power_results(ctx, general_routing_power_results))
     open_road_commands.extend(generate_area_results(general_routing_area_results))
 
