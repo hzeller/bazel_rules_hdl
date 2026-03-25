@@ -5,33 +5,10 @@ Hardware Description Language (Verilog, VHDL, Chisel, nMigen, etc) with open too
 
 ## Installation
 
-In your `WORKSPACE` file. Which is a file at the top directory of every bazel
-repo:
+To use these rules, add the following to your `MODULE.bazel` file:
 
 ```starlark
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
-
-# You don't need these variables, but are useful for configurability.
-# Feel free to hardcode these values in the maybe http_archive below.
-rules_hdl_git_hash = "{LATEST_HASH}"
-rules_hdl_git_sha256 = "{LATEST_SHA}"
-
-maybe(
-    http_archive,
-    name = "rules_hdl",
-    sha256 = rules_hdl_git_sha256,
-    strip_prefix = "bazel_rules_hdl-%s" % rules_hdl_git_hash,
-    urls = [
-        "https://github.com/hdl/bazel_rules_hdl/archive/%s.tar.gz" % rules_hdl_git_hash,
-    ],
-)
-
-load("@rules_hdl//dependency_support:dependency_support.bzl", rules_hdl_dependency_support = "dependency_support")
-rules_hdl_dependency_support()
-
-load("@rules_hdl//:init.bzl", rules_hdl_init = "init")
-rules_hdl_init()
+bazel_dep(name = "rules_hdl", version = "...")
 ```
 
 ## Usage
@@ -105,7 +82,7 @@ workspace.
 ```
 BUILD
 counter.v
-WORKSPACE
+MODULE.bazel
 ```
 
 When you run `bazel build //:counter_place_and_route`. It will output log files

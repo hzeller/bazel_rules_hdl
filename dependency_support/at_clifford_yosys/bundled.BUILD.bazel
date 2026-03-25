@@ -20,9 +20,9 @@ various application domains.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_binary")
-load("@rules_hdl//dependency_support/at_clifford_yosys:yosys.bzl", "yosys_syntax_check", "move_files")
-load("@rules_hdl//dependency_support/com_github_westes_flex:flex.bzl", "genlex")
-load("@rules_hdl//dependency_support/org_gnu_bison:bison.bzl", "genyacc")
+load("@rules_flex//flex:flex.bzl", "flex", "flex_cc_library")
+load("@rules_bison//bison:bison.bzl", "bison", "bison_cc_library")
+load("@rules_hdl//dependency_support:copy.bzl", "copy")
 
 licenses(["restricted"])
 
@@ -54,30 +54,98 @@ genrule(
     ),
 )
 
-genlex(
-    name = "verilog_lexer",
+flex(
+    name = "verilog_lexer_internal",
     src = "frontends/verilog/verilog_lexer.l",
-    out = "verilog_lexer.cc",
 )
 
-genyacc(
-    name = "verilog_parser",
+filegroup(
+    name = "verilog_lexer_src",
+    srcs = [":verilog_lexer_internal"],
+    output_group = "cc_srcs",
+)
+
+copy(
+    name = "verilog_lexer_cc",
+    src = ":verilog_lexer_src",
+    out = "frontends/verilog/verilog_lexer.cc",
+)
+
+bison(
+    name = "verilog_parser_internal",
     src = "frontends/verilog/verilog_parser.y",
-    header_out = "frontends/verilog/verilog_parser.tab.hh",
-    source_out = "frontends/verilog/verilog_parser.tab.cc",
+    
 )
 
-genlex(
-    name = "rtlil_lexer",
+filegroup(
+    name = "verilog_parser_src",
+    srcs = [":verilog_parser_internal"],
+    output_group = "cc_srcs",
+)
+
+filegroup(
+    name = "verilog_parser_hdr",
+    srcs = [":verilog_parser_internal"],
+    output_group = "cc_hdrs",
+)
+
+copy(
+    name = "verilog_parser_cc",
+    src = ":verilog_parser_src",
+    out = "frontends/verilog/verilog_parser.cc",
+)
+
+copy(
+    name = "verilog_parser_h",
+    src = ":verilog_parser_hdr",
+    out = "frontends/verilog/verilog_parser.tab.hh",
+)
+
+flex(
+    name = "rtlil_lexer_internal",
     src = "frontends/rtlil/rtlil_lexer.l",
-    out = "rtlil_lexer.cc",
 )
 
-genyacc(
-    name = "rtlil_parser",
+filegroup(
+    name = "rtlil_lexer_src",
+    srcs = [":rtlil_lexer_internal"],
+    output_group = "cc_srcs",
+)
+
+copy(
+    name = "rtlil_lexer_cc",
+    src = ":rtlil_lexer_src",
+    out = "frontends/rtlil/rtlil_lexer.cc",
+)
+
+bison(
+    name = "rtlil_parser_internal",
     src = "frontends/rtlil/rtlil_parser.y",
-    header_out = "frontends/rtlil/rtlil_parser.tab.hh",
-    source_out = "frontends/rtlil/rtlil_parser.tab.cc",
+    
+)
+
+filegroup(
+    name = "rtlil_parser_src",
+    srcs = [":rtlil_parser_internal"],
+    output_group = "cc_srcs",
+)
+
+filegroup(
+    name = "rtlil_parser_hdr",
+    srcs = [":rtlil_parser_internal"],
+    output_group = "cc_hdrs",
+)
+
+copy(
+    name = "rtlil_parser_cc",
+    src = ":rtlil_parser_src",
+    out = "frontends/rtlil/rtlil_parser.cc",
+)
+
+copy(
+    name = "rtlil_parser_h",
+    src = ":rtlil_parser_hdr",
+    out = "frontends/rtlil/rtlil_parser.tab.hh",
 )
 
 py_binary(
@@ -127,7 +195,6 @@ GENERATED_HEADERS = [
 ]
 
 YOSYS_COPTS = [
-    "-DYOSYS_SRC='\"./\"'",
     "-fexceptions",
     "-Wno-error",
     "-Wno-implicit-fallthrough",
@@ -158,13 +225,15 @@ cc_library(
             "passes/techmap/filterlib.cc",
         ],
     ) + [
-        ":verilog_lexer",
-        ":verilog_parser",
-        ":rtlil_parser",
-        ":rtlil_lexer",
         "passes/techmap/techmap.inc",
         "techlibs/common/simcells_help.inc",
         "techlibs/common/simlib_help.inc",
+        ":verilog_lexer_cc",
+        ":verilog_parser_cc",
+        ":verilog_parser_h",
+        ":rtlil_lexer_cc",
+        ":rtlil_parser_cc",
+        ":rtlil_parser_h",
     ],
     hdrs = glob(
         [
@@ -189,6 +258,7 @@ cc_library(
         "YOSYS_ENABLE_ABC",
         "YOSYS_ENABLE_COVER",
         'ABCEXTERNAL=\\"abc\\"',
+        'YOSYS_SRC="\\\"./\\\""',
     ],
     features = ["-use_header_modules"],
     includes = [
@@ -208,10 +278,10 @@ cc_library(
         ":sha1",
         ":subcircuit",
         ":fst",
-        "@org_gnu_readline//:readline",
-        "@edu_berkeley_abc//:abc-lib",
-        "@org_sourceware_libffi//:libffi",
-        "@tk_tcl//:tcl",
+        "@readline//:readline",
+        "@abc//:abc",
+        "@libffi//:libffi",
+        "@tcl_lang//:tcl",
     ],
     alwayslink = True,
     visibility = ["//visibility:public"],
@@ -223,25 +293,26 @@ cc_binary(
         "kernel/driver.cc",
     ],
     copts = YOSYS_COPTS,
+    defines = ['YOSYS_SRC="\\\"./\\\""'],
     features = ["-use_header_modules"],
     data = [
         ":share_files",
-        "@edu_berkeley_abc//:abc",
+        "@abc//:abc_bin",
+        "@tcl_lang//:tcl_core",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":kernel",
         ":version",
-        "@org_gnu_readline//:readline",
+        "@readline//:readline",
     ],
 )
 
-move_files(
-  name = "common_techlibs",
-  srcs = glob([
-    "techlibs/common/*.v",
-  ]),
-  destination = "techlibs",
+genrule(
+    name = "techmap_v",
+    srcs = ["techlibs/common/techmap.v"],
+    outs = ["techmap.v"],
+    cmd = "cp $< $@",
 )
 
 filegroup(
@@ -257,17 +328,19 @@ filegroup(
     exclude = [
       "techlibs/common/*.v",
     ]
-  ) + [
-    ":common_techlibs"
-  ],
+  ) + [":techmap_v"],
+  visibility = ["//visibility:public"],
 )
 
-yosys_syntax_check(
+genrule(
     name = "testing_yosys_syntax_check_build_rule",
     srcs = [
         "examples/cmos/cmos_cells.v",
         "examples/cmos/counter.v",
     ],
+    outs = ["syntax_check.log"],
+    cmd = "$(location :yosys) -Q -T -p 'read_verilog -sv $(SRCS)' 2>&1 | tee $@",
+    tools = [":yosys"],
 )
 
 cc_test(
@@ -452,7 +525,7 @@ cc_library(
         "libs/fst/lz4.h",
     ],
     deps = [
-        "@net_zlib//:zlib",
+        "@zlib//:zlib",
     ],
     licenses = ["notice"],
 )

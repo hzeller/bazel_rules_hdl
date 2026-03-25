@@ -94,7 +94,8 @@ def _collect_transitive_files(ctx):
 def _collect_transitive_runfiles(ctx):
     return ctx.runfiles().merge_all(
         [dep.default_runfiles for dep in ctx.attr.deps] +
-        [dep.default_runfiles for dep in ctx.attr.sim],
+        [dep.default_runfiles for dep in ctx.attr.sim] +
+        [ctx.attr.cocotb_wrapper.default_runfiles],
     )
 
 # Helpers for preparing test script and its environment
@@ -109,9 +110,12 @@ def _get_pythonpath_to_set(ctx):
     return ":".join(imports)
 
 def _get_path_to_set(ctx):
-    sim_paths = _remove_duplicates_from_list([dep.label.workspace_root for dep in ctx.attr.sim])
-    path = ":".join(["$PWD/" + str(p) for p in sim_paths])
-    return path
+    path_elements = []
+    for dep in ctx.attr.sim:
+        if dep[DefaultInfo].files_to_run.executable:
+            short_path = dep[DefaultInfo].files_to_run.executable.short_path
+            path_elements.append("$PWD/" + short_path.rpartition("/")[0])
+    return ":".join(_remove_duplicates_from_list(path_elements))
 
 def _get_test_command(ctx, verilog_files, vhdl_files):
     vhdl_sources_args = _files_to_argstring(vhdl_files, "vhdl_sources")
@@ -132,11 +136,11 @@ def _get_test_command(ctx, verilog_files, vhdl_files):
     seed_args = " --seed {}".format(ctx.attr.seed) if ctx.attr.seed != "" else ""
 
     test_module_args = _pymodules_to_argstring(ctx.files.test_module, "test_module")
-    python_interpreter = ctx.toolchains["@rules_python//python:toolchain_type"].py3_runtime.interpreter.path
+    python_interpreter = ctx.toolchains["@rules_python//python:toolchain_type"].py3_runtime.interpreter.short_path
 
     command = (
         "PATH={}:$PATH ".format(_get_path_to_set(ctx)) +
-        "{}".format(python_interpreter) +
+        str(python_interpreter) +
         " {}".format(ctx.executable.cocotb_wrapper.short_path) +
         " --sim {}".format(ctx.attr.sim_name) +
         " --hdl_library {}".format(ctx.attr.hdl_library) +

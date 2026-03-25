@@ -16,11 +16,11 @@
 #   Icarus Verilog is a Verilog simulation and synthesis tool.
 #   Use :iverilog and :vvp targets in your genrules.
 
-load("@rules_hdl//dependency_support/com_github_westes_flex:flex.bzl", "genlex")
-load("@rules_hdl//dependency_support/org_gnu_bison:bison.bzl", "genyacc")
+load("@rules_flex//flex:flex.bzl", "flex", "flex_cc_library")
+load("@rules_bison//bison:bison.bzl", "bison", "bison_cc_library")
 load("@rules_hdl//dependency_support/com_icarus_iverilog:build-plugins.bzl", "vpi_binary")
-load("@rules_hdl//dependency_support:copy.bzl", "copy", "touch")
 load("@rules_hdl//dependency_support:pseudo_configure.bzl", "pseudo_configure")
+load("@rules_hdl//dependency_support:copy.bzl", "copy")
 
 # The only two exported labels are iverilog and vvp. They are enough
 # to run simple simulations.
@@ -50,10 +50,20 @@ sh_binary(
         ":iverilog-bin",
         ":ivl",
         ":ivlpp",
+        ":vvp-bin",
         ":vvp_tgt",
+        ":system_vpi",
+        ":v2005_math_vpi",
+        ":v2009_vpi",
+        ":va_math_vpi",
+        ":vhdl_sys_vpi",
+        ":vhdl_textio_vpi",
     ],
     output_licenses = ["unencumbered"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@rules_shell//shell/runfiles",
+    ],
 )
 
 genrule(
@@ -69,17 +79,20 @@ sh_binary(
     name = "vvp",
     srcs = ["@rules_hdl//dependency_support/com_icarus_iverilog:vvp.sh"],
     data = [
+        ":iverilog-bin",
         ":system_vpi",
         ":v2005_math_vpi",
         ":v2009_vpi",
         ":va_math_vpi",
         ":vhdl_sys_vpi",
         ":vhdl_textio_vpi",
-        ":vpi_debug_vpi",
         ":vvp-bin",
     ],
     output_licenses = ["unencumbered"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@rules_shell//shell/runfiles",
+    ],
 )
 
 # API for writing VPI extensions.
@@ -101,6 +114,7 @@ cc_library(
         "libmisc/StringHeap.h",
     ],
     copts = ["-Wno-unused-variable"],
+    includes = ["libmisc"],
 )
 
 cc_binary(
@@ -114,11 +128,13 @@ cc_binary(
     ) + [
         ":config_h",
         "vvp/ivl_dlfcn.h",
-        ":lexor",
         ":lexor_keyword_cc",
-        ":parse_y",
-        ":syn-rules_y",
         ":version_tag_h",
+        ":parse_gen_cc",
+        ":parse_h",
+        ":syn-rules_gen_cc",
+        ":syn-rules_h",
+        ":lexor_gen_cc",
     ],
     # Really poor code hygiene. Produces mounds of warnings.
     copts = ["-w"],
@@ -138,26 +154,90 @@ cc_binary(
     ],
 )
 
-genlex(
-    name = "lexor",
-    src = "lexor.lex",
-    out = "lexor.cc",
+genrule(
+    name = "lexor_l",
+    srcs = ["lexor.lex"],
+    outs = ["lexor.l"],
+    cmd = "cp $< $@",
 )
 
-genyacc(
-    name = "parse_y",
+bison(
+    name = "parse_internal",
     src = "parse.y",
-    header_out = "parse.h",
-    prefix = "VL",
-    source_out = "parse.cc",
+    bison_options = ["-p", "VL"],
+    
 )
 
-genyacc(
-    name = "syn-rules_y",
+filegroup(
+    name = "parse_gen_src",
+    srcs = [":parse_internal"],
+    output_group = "cc_srcs",
+)
+
+filegroup(
+    name = "parse_gen_hdr",
+    srcs = [":parse_internal"],
+    output_group = "cc_hdrs",
+)
+
+copy(
+    name = "parse_gen_cc",
+    src = ":parse_gen_src",
+    out = "parse_gen.cc",
+)
+
+copy(
+    name = "parse_h",
+    src = ":parse_gen_hdr",
+    out = "parse.h",
+)
+
+bison(
+    name = "syn-rules_internal",
     src = "syn-rules.y",
-    header_out = "syn-rules.h",
-    prefix = "syn_",
-    source_out = "syn-rules.cc",
+    bison_options = ["-p", "syn_"],
+    
+)
+
+filegroup(
+    name = "syn-rules_gen_src",
+    srcs = [":syn-rules_internal"],
+    output_group = "cc_srcs",
+)
+
+filegroup(
+    name = "syn-rules_gen_hdr",
+    srcs = [":syn-rules_internal"],
+    output_group = "cc_hdrs",
+)
+
+copy(
+    name = "syn-rules_gen_cc",
+    src = ":syn-rules_gen_src",
+    out = "syn-rules_gen.cc",
+)
+
+copy(
+    name = "syn-rules_h",
+    src = ":syn-rules_gen_hdr",
+    out = "syn-rules.h",
+)
+
+flex(
+    name = "lexor_internal",
+    src = ":lexor_l",
+)
+
+filegroup(
+    name = "lexor_gen_src",
+    srcs = [":lexor_internal"],
+    output_group = "cc_srcs",
+)
+
+copy(
+    name = "lexor_gen_cc",
+    src = ":lexor_gen_src",
+    out = "lexor_gen.cc",
 )
 
 cc_binary(
@@ -170,16 +250,16 @@ cc_binary(
         "ivl_alloc.h",
         "version_base.h",
         ":version_tag_h",
-        ":cflexor",
-        ":cfparse_y",
     ],
     copts = [
         "-D_GNU_SOURCE",
         "-std=c11",
         "-fcommon",
-        "-DIVL_LIB='\"\"'",
-        "-DIVL_SUFFIX='\"\"'",
-        "-DIVL_INCLUDE_INSTALL_DIR='\"\"'",
+    ],
+    defines = [
+        'IVL_LIB="\\\"\\\""',
+        'IVL_SUFFIX="\\\"\\\""',
+        'IVL_INCLUDE_INSTALL_DIR="\\\"\\\""',
     ],
     # Do not sort: dot last.
     includes = [
@@ -187,20 +267,51 @@ cc_binary(
         "libmisc",
         ".",
     ],
+    deps = [
+        ":cflexor",
+        ":cfparse",
+    ],
 )
 
-genlex(
-    name = "cflexor",
+copy(
+    name = "cflexor_l",
     src = "driver/cflexor.lex",
-    out = "driver/cflexor.c",
+    out = "driver/cflexor.l",
 )
 
-genyacc(
-    name = "cfparse_y",
+flex_cc_library(
+    name = "cflexor",
+    src = ":cflexor_l",
+    deps = [
+        ":driver_hdrs",
+        ":cfparse",
+    ],
+)
+
+cc_library(
+    name = "driver_hdrs",
+    hdrs = glob(["driver/*.h"]),
+    includes = ["driver"],
+)
+
+cc_library(
+    name = "root_hdrs",
+    hdrs = glob(["*.h"]) + [
+        ":_pli_types_h",
+        ":config_h",
+    ],
+    includes = ["."],
+)
+
+bison_cc_library(
+    name = "cfparse",
     src = "driver/cfparse.y",
-    header_out = "driver/cfparse.h",
-    prefix = "cf",
-    source_out = "driver/cfparse.c",
+    bison_options = ["-p", "cf"],
+    include_prefix = "driver",
+    deps = [
+        ":driver_hdrs",
+        ":root_hdrs",
+    ],
 )
 
 cc_binary(
@@ -214,17 +325,21 @@ cc_binary(
         "version_base.h",
         ":version_tag_h",
         ":gen_tables",
-        ":vvp_flexor",
-        ":vvp_parse_y",
         ":vvp_gen__vvp_config_h",
+        ":vvp_parse_gen_cc",
+        ":vvp_parse_h",
+        ":vvp_flexor_gen_cc",
     ],
     copts = [
         "-O2",  # Optimized binary regardless of configuration.
         "-Wno-implicit-fallthrough",
+        "-include",
+        "vvp_config_fixed/config.h",
+        "-iquote",
+        "external/+tools_extension+com_icarus_iverilog/vvp",
     ],
     # Do not sort: dot last.
     includes = [
-        "vvp_gen",
         "vvp",
         ".",
     ],
@@ -234,21 +349,85 @@ cc_binary(
     ],
     deps = [
         ":vpi_user",
-        "@org_gnu_readline//:readline",
+        ":vvp_config_hdrs",
+        "@bzip2//:bz2",
+        "@zlib//:zlib",
+        "@readline//:readline",
     ],
 )
 
-genyacc(
-    name = "vvp_parse_y",
-    src = "vvp/parse.y",
-    header_out = "vvp_gen/parse.h",
-    source_out = "vvp_gen/parse.cc",
+cc_library(
+    name = "vvp_hdrs",
+    hdrs = glob(["vvp/*.h"]),
+    includes = ["vvp"],
 )
 
-genlex(
-    name = "vvp_flexor",
-    src = "vvp/lexor.lex",
-    out = "vvp_gen/lexor.cc",
+cc_library(
+    name = "vvp_config_hdrs",
+    hdrs = [":vvp_gen__vvp_config_h"],
+    include_prefix = "vvp_config_fixed",
+    strip_include_prefix = "vvp_config_dir",
+)
+
+genrule(
+    name = "vvp_parse_y_fixed",
+    srcs = ["vvp/parse.y"],
+    outs = ["vvp_parse_fixed.y"],
+    cmd = "sed 's|\"parse_misc.h\"|\"vvp/parse_misc.h\"|' $< > $@",
+)
+
+bison(
+    name = "vvp_parse_internal",
+    src = ":vvp_parse_y_fixed",
+    
+)
+
+filegroup(
+    name = "vvp_parse_gen_src",
+    srcs = [":vvp_parse_internal"],
+    output_group = "cc_srcs",
+)
+
+filegroup(
+    name = "vvp_parse_gen_hdr",
+    srcs = [":vvp_parse_internal"],
+    output_group = "cc_hdrs",
+)
+
+copy(
+    name = "vvp_parse_gen_cc",
+    src = ":vvp_parse_gen_src",
+    out = "vvp_parse_gen.cc",
+)
+
+copy(
+    name = "vvp_parse_h",
+    src = ":vvp_parse_gen_hdr",
+    out = "vvp_parse.h",
+)
+
+genrule(
+    name = "vvp_lexor_l",
+    srcs = ["vvp/lexor.lex"],
+    outs = ["vvp_lexor.l"],
+    cmd = "sed -e 's|\"parse.h\"|\"vvp_parse.h\"|' -e 's|\"parse_misc.h\"|\"vvp/parse_misc.h\"|' $< > $@",
+)
+
+flex(
+    name = "vvp_flexor_internal",
+    src = ":vvp_lexor_l",
+)
+
+filegroup(
+    name = "vvp_flexor_gen_src",
+    srcs = [":vvp_flexor_internal"],
+    output_group = "cc_srcs",
+)
+
+copy(
+    name = "vvp_flexor_gen_cc",
+    src = ":vvp_flexor_gen_src",
+    out = "vvp_flexor_gen.cc",
 )
 
 cc_binary(
@@ -273,7 +452,6 @@ cc_binary(
         "ivl_alloc.h",
         "version_base.h",
         ":version_tag_h",
-        ":ivlpp_lexor",
     ],
     copts = ["-Wno-unused-variable"],
     # Do not sort: dot last.
@@ -281,12 +459,28 @@ cc_binary(
         "ivlpp",
         ".",
     ],
+    deps = [":ivlpp_lexor"],
 )
 
-genlex(
-    name = "ivlpp_lexor",
+copy(
+    name = "ivlpp_lexor_l",
     src = "ivlpp/lexor.lex",
-    out = "ivlpp_gen/lexor.c",
+    out = "ivlpp_lexor.l",
+)
+
+cc_library(
+    name = "ivlpp_hdrs",
+    hdrs = glob(["ivlpp/*.h"]),
+    includes = ["ivlpp"],
+)
+
+flex_cc_library(
+    name = "ivlpp_lexor",
+    src = ":ivlpp_lexor_l",
+    deps = [
+        ":root_hdrs",
+        ":ivlpp_hdrs",
+    ],
 )
 
 vpi_binary(
@@ -345,11 +539,6 @@ vpi_binary(
         "vpi/vcd_priv2.cc",
         "vpi/vpi_config.h",
         "vpi/wavealloca.h",
-        ":table_mod_lexor_lex",
-        ":table_mod_parse_y",
-        ":vpi_sdf_lexor",
-        ":vpi_sdfparse_y",
-        ":vpi_sys_readmem_lex",
     ],
     out = "system.vpi",
     # Optimized binary regardless of configuration.
@@ -366,43 +555,89 @@ vpi_binary(
     # The code has atrocious const hygiene. Produces mounds of warnings.
     deps = [
         ":vpi_user",
-        "@org_sourceware_bzip2//:bzip2",
-        "@net_zlib//:zlib",
+        ":table_mod_lexor_lex",
+        ":table_mod_parse",
+        ":vpi_sdf_lexor",
+        ":sdf_parse",
+        ":vpi_sys_readmem_lex",
+        "@bzip2//:bz2",
+        "@zlib//:zlib",
     ],
 )
 
-genyacc(
-    name = "table_mod_parse_y",
+cc_library(
+    name = "vpi_hdrs",
+    hdrs = glob(["vpi/*.h"]),
+    includes = ["vpi"],
+)
+
+bison_cc_library(
+    name = "table_mod_parse",
     src = "vpi/table_mod_parse.y",
-    header_out = "vpi/table_mod_parse.h",
-    prefix = "tblmod",
-    source_out = "vpi/table_mod_parse.c",
+    bison_options = ["-p", "tblmod"],
+    include_prefix = "vpi",
+    deps = [
+        ":root_hdrs",
+        ":vpi_hdrs",
+    ],
 )
 
-genlex(
-    name = "table_mod_lexor_lex",
+copy(
+    name = "table_mod_lexor_lex_l",
     src = "vpi/table_mod_lexor.lex",
-    out = "vpi/table_mod_lexor.c",
+    out = "vpi/table_mod_lexor.l",
 )
 
-genyacc(
-    name = "vpi_sdfparse_y",
+flex_cc_library(
+    name = "table_mod_lexor_lex",
+    src = ":table_mod_lexor_lex_l",
+    deps = [
+        ":root_hdrs",
+        ":vpi_hdrs",
+        ":table_mod_parse",
+    ],
+)
+
+bison_cc_library(
+    name = "sdf_parse",
     src = "vpi/sdf_parse.y",
-    header_out = "vpi/sdf_parse.h",
-    prefix = "sdf",
-    source_out = "vpi/sdf_parse.c",
+    bison_options = ["-p", "sdf"],
+    include_prefix = "vpi",
+    deps = [
+        ":root_hdrs",
+        ":vpi_hdrs",
+    ],
 )
 
-genlex(
-    name = "vpi_sdf_lexor",
+copy(
+    name = "vpi_sdf_lexor_l",
     src = "vpi/sdf_lexor.lex",
-    out = "vpi/sdf_lexor.c",
+    out = "vpi/sdf_lexor.l",
 )
 
-genlex(
-    name = "vpi_sys_readmem_lex",
+flex_cc_library(
+    name = "vpi_sdf_lexor",
+    src = ":vpi_sdf_lexor_l",
+    deps = [
+        ":root_hdrs",
+        ":vpi_hdrs",
+        ":sdf_parse",
+    ],
+)
+
+copy(
+    name = "vpi_sys_readmem_lex_l",
     src = "vpi/sys_readmem_lex.lex",
-    out = "vpi/sys_readmem_lex.c",
+    out = "vpi/sys_readmem_lex.l",
+)
+
+flex_cc_library(
+    name = "vpi_sys_readmem_lex",
+    src = ":vpi_sys_readmem_lex_l",
+    deps = [
+        ":root_hdrs",
+        ":vpi_hdrs",
+    ],
 )
 
 vpi_binary(
@@ -563,9 +798,9 @@ genrule(
 genrule(
     name = "lexor_keyword_cc",
     srcs = ["lexor_keyword.gperf"],
-    tools = ["@org_gnu_gperf//:gperf"],
+    tools = ["@gperf//:gperf"],
     outs = ["lexor_keyword.cc"],
-    cmd = "$(location @org_gnu_gperf//:gperf) -o -i 7 -C -k 1-4,6,9,$$ -H keyword_hash -N check_identifier -t $(location :lexor_keyword.gperf) > $@",
+    cmd = "$(location @gperf//:gperf) -o -i 7 -C -k 1-4,6,9,$$ -H keyword_hash -N check_identifier -t $(location :lexor_keyword.gperf) > $@",
     message = "Generating perfect hash function from $(SRCS)",
 )
 
@@ -605,15 +840,15 @@ genrule(
 pseudo_configure(
     name = "vvp_gen__vvp_config_h",
     src = "vvp/config.h.in",
-    out = "vvp_gen/config.h",
+    out = "vvp_config_dir/config.h",
     defs = DEFS,
     mappings = {"SIZEOF_UNSIGNED_LONG_LONG": "8", "SIZEOF_UNSIGNED_LONG": "8", "SIZEOF_UNSIGNED": "4", "SIZEOF_VOID_P": "8", "USE_READLINE": "", "USE_HISTORY": "", "MODULE_DIR": '"."', "__STDC_FORMAT_MACROS": "", "TIME_FMT_O": '"lo"', "TIME_FMT_U": '"lu"', "TIME_FMT_X": '"lx"', "UL_AND_TIME64_SAME": "", "i64round": "lround", "nan(x)": "(NAN)", "INFINITY": "HUGE_VAL", "LU": '""', "TU": '""'},
 )
 
-touch(
+genrule(
     name = "version_tag_h",
-    out = "version_tag.h",
-    contents = dict(VERSION_TAG = '"v12_0"'),
+    outs = ["version_tag.h"],
+    cmd = "echo '#define VERSION_TAG \"v12_0\"' > $@",
 )
 
 # Trivial integration tests to confirm iverilog is minimally functional.

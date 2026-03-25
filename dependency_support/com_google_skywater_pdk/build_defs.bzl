@@ -23,6 +23,8 @@ load("//pdk:open_road_configuration.bzl", "OpenRoadPdkInfo")
 def _skywater_corner_impl(ctx):
     # Choose user supplied root, or default to build directory.
     standard_cell_root = ctx.attr.standard_cell_root
+    if standard_cell_root == "." or standard_cell_root == "auto":
+        standard_cell_root = ctx.label.workspace_root
 
     # Choose the build target name as the corner first unless overwritten.
     corner = ctx.attr.corner if ctx.attr.corner else ctx.attr.name

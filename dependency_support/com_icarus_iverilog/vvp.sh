@@ -18,9 +18,24 @@
 
 set -eu
 
-dir="$0.runfiles/com_icarus_iverilog"
-if [[ ! -d "$dir" ]]; then
-  dir=$(dirname $0)  # use current directory it not launched directly from the :vvp target.
+# --- begin runfiles.bash initialization v2 ---
+# Copy-pasted from the Bazel Bash runfiles library v2.
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo>&2 "ERROR: cannot find $f"; exit 1; }; f=;
+# --- end runfiles.bash initialization v2 ---
+
+vvp_bin=$(rlocation "com_icarus_iverilog/vvp-bin")
+if [[ -z "$vvp_bin" ]]; then
+  echo >&2 "ERROR: cannot find vvp-bin in runfiles"
+  exit 1
 fi
 
-exec "$dir/vvp-bin" -M"$dir" "$@"
+abs_vvp_bin=$(readlink -f "$vvp_bin")
+abs_dir=$(dirname "$abs_vvp_bin")
+
+exec "$abs_vvp_bin" -M"$abs_dir" "$@"

@@ -14,7 +14,7 @@
 
 """Reimplementing place-and-route using composable and externalizable pieces"""
 
-load("//flows:flows.bzl", "FlowStepInfo", "script_prefix")
+load("//flows:flows.bzl", "FlowStepInfo", "get_rlocation_path", "script_prefix")
 load("//pdk:build_defs.bzl", "StandardCellInfo")
 
 def assemble_openroad_step(
@@ -49,22 +49,16 @@ def assemble_openroad_step(
         "-no_splash",
         "-exit",
         # Put metrics in a default file if the output location is not set.
-        "-metrics ${{OUTPUT_METRICS:-{name}_metrics.json}}".format(
-            name = ctx.attr.name,
-        ),
-        "${RUNFILES}/" + script_file.short_path,
+        "-metrics \"${OUTPUT_METRICS:-" + ctx.attr.name + "_metrics.json}\"",
     ]
 
-    commands = [script_prefix]
-
-    # TODO(amfv): Compute TCL_LIBRARY properly instead of hardcoding it.
-    commands.append("export TCL_LIBRARY=${RUNFILES}/../tk_tcl/library")
-
-    exec_openroad = """{openroad} {args} "$@"\n""".format(
-        openroad = "${RUNFILES}/" + openroad_executable.short_path,
-        args = " ".join(openroad_args),
-    )
-    commands.append(exec_openroad)
+    commands = [
+        script_prefix,
+        "# Use rlocation to find the script and openroad binary",
+        'SCRIPT=$(rlocation "%s")' % get_rlocation_path(ctx, script_file),
+        'OPENROAD=$(rlocation "org_theopenroadproject/openroad")',
+        'exec "$OPENROAD" %s "$SCRIPT" "$@"' % " ".join(openroad_args),
+    ]
 
     ctx.actions.write(
         output = openroad_wrapper,
@@ -73,6 +67,7 @@ def assemble_openroad_step(
     )
 
     openroad_runfiles = ctx.attr._openroad[DefaultInfo].default_runfiles
+    runfiles_lib_runfiles = ctx.attr._runfiles_lib[DefaultInfo].default_runfiles
 
     # Any openroad step can produce a metrics JSON file
     full_outputs = outputs if "metrics" in outputs else outputs + ["metrics"]
@@ -88,7 +83,7 @@ def assemble_openroad_step(
         DefaultInfo(
             executable = openroad_wrapper,
             # TODO(amfv): Switch to runfiles.merge_all once our minimum Bazel version provides it.
-            runfiles = runfiles.merge(step_runfiles).merge(openroad_runfiles),
+            runfiles = runfiles.merge(step_runfiles).merge(openroad_runfiles).merge(runfiles_lib_runfiles),
         ),
     ]
 
@@ -126,6 +121,9 @@ openroad_step = rule(
             default = Label("@org_theopenroadproject//:openroad"),
             executable = True,
             cfg = "exec",
+        ),
+        "_runfiles_lib": attr.label(
+            default = Label("@bazel_tools//tools/bash/runfiles"),
         ),
     },
     executable = True,

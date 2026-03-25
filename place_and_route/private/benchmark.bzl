@@ -34,7 +34,11 @@ def benchmark(ctx, open_road_info):
 
     open_road_commands = [
         est_parasitic_cmd,
-        "set_power_activity -input -activity {} -duty 0.5".format(ctx.attr.power_switching_activity),
+    ]
+    if ctx.attr.clock_period or ctx.attr.clocks or ctx.file.sdc:
+        open_road_commands.append("set_power_activity -input -activity {} -duty 0.5".format(ctx.attr.power_switching_activity))
+
+    open_road_commands.extend([
         "report_power",
         "report_wns",
         "report_tns",
@@ -44,7 +48,7 @@ def benchmark(ctx, open_road_info):
         "report_cell_usage",
         "report_clock_min_period",
         "report_clock_properties",
-    ]
+    ])
 
     cmd_outputs = []
 

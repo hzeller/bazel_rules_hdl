@@ -14,46 +14,35 @@
 
 """Reimplementing place-and-route using composable and externalizable pieces"""
 
-load("//flows:flows.bzl", "FlowStepInfo", "script_prefix")
+load("//flows:flows.bzl", "FlowStepInfo", "get_rlocation_path", "script_prefix")
 load("//pdk:build_defs.bzl", "StandardCellInfo")
 
 def _yosys_synth_file_step_impl(ctx):
-    yosys_executable = ctx.attr._yosys.files_to_run.executable
     yosys_runfiles = ctx.attr._yosys[DefaultInfo].default_runfiles
+    abc_runfiles = ctx.attr._abc[DefaultInfo].default_runfiles
+    runfiles_lib_runfiles = ctx.attr._runfiles_lib[DefaultInfo].default_runfiles
 
     yosys_wrapper = ctx.actions.declare_file(ctx.attr.name)
 
     standard_cells = ctx.attr.standard_cells[StandardCellInfo]
-
     liberty = standard_cells.default_corner.liberty
-
     synth_tcl = ctx.file.synth_tcl
 
-    cell_runfiles = ctx.runfiles(files = [synth_tcl, liberty, yosys_wrapper])
-
-    yosys_args = [
-        "-q",  # quiet mode only errors printed to stderr
-        "-q",  # second q don't print warnings
-        "-Q",  # Don't print header
-        "-T",  # Don't print footer
-        "-c ${RUNFILES}/" + synth_tcl.short_path,
+    commands = [
+        script_prefix,
+        "# Use rlocation to find all necessary tools and files",
+        'YOSYS=$(rlocation "at_clifford_yosys/yosys")',
+        'ABC_BIN=$(rlocation "abc/abc_bin")',
+        'LIBERTY_FILE=$(rlocation "%s")' % get_rlocation_path(ctx, liberty),
+        'TCL_INIT=$(rlocation "tcl_lang/library/init.tcl")',
+        'SYNTH_TCL=$(rlocation "%s")' % get_rlocation_path(ctx, synth_tcl),
+        'export YOSYS_DATDIR=$(dirname "$YOSYS")/',
+        'export ABC="$ABC_BIN"',
+        'export LIBERTY="$LIBERTY_FILE"',
+        'export TCL_LIBRARY=$(dirname "$TCL_INIT")',
+        "# Exec yosys using its resolved path",
+        'exec "$YOSYS" -q -q -Q -T -c "$SYNTH_TCL" "$@"',
     ]
-
-    commands = [script_prefix]
-    commands.append("export LIBERTY=${RUNFILES}/" + liberty.short_path)
-
-    # TODO(amfv): Compute Yosys data environment variables properly instead of hardcoding them.
-    commands.extend([
-        "export YOSYS_DATDIR=${RUNFILES}/../at_clifford_yosys/techlibs/",
-        "export ABC=${RUNFILES}/../edu_berkeley_abc/abc",
-    ])
-
-    exec_yosys = """{yosys} {args} "$@"\n""".format(
-        yosys = "${RUNFILES}/" + yosys_executable.short_path,
-        args = " ".join(yosys_args),
-    )
-
-    commands.append(exec_yosys)
 
     ctx.actions.write(
         output = yosys_wrapper,
@@ -72,7 +61,10 @@ def _yosys_synth_file_step_impl(ctx):
         DefaultInfo(
             executable = yosys_wrapper,
             # TODO(amfv): Switch to runfiles.merge_all once our minimum Bazel version provides it.
-            runfiles = cell_runfiles.merge(yosys_runfiles),
+            runfiles = ctx.runfiles(files = [synth_tcl, liberty, yosys_wrapper])
+                .merge(yosys_runfiles)
+                .merge(abc_runfiles)
+                .merge(runfiles_lib_runfiles),
         ),
     ]
 
@@ -87,6 +79,14 @@ yosys_synth_file_step = rule(
             default = Label("//flows/yosys:synth.tcl"),
             allow_single_file = True,
             doc = "Tcl script controlling Yosys synthesis, using the Flow Step API environment variables",
+        ),
+        "_abc": attr.label(
+            default = Label("@abc//:abc_bin"),
+            executable = True,
+            cfg = "exec",
+        ),
+        "_runfiles_lib": attr.label(
+            default = Label("@bazel_tools//tools/bash/runfiles"),
         ),
         "_yosys": attr.label(
             default = Label("@at_clifford_yosys//:yosys"),

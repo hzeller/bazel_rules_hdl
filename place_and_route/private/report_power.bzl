@@ -22,7 +22,7 @@ def generate_power_results(ctx, output_file):
 
     return [
         "report_power",
-        "set power_result [sta::design_power [sta::parse_corner {}]]",
+        "set power_result [sta::design_power [lindex [sta::get_scenes] 0]]",
         "set fp [open \"{output_file}\" w+]".format(
             output_file = output_file.path,
         ),

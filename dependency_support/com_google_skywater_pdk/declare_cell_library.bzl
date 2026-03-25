@@ -19,11 +19,10 @@ load("@rules_hdl//dependency_support/com_google_skywater_pdk:build_defs.bzl", "s
 load("@rules_hdl//dependency_support/com_google_skywater_pdk:cells_info.bzl", "sky130_cell_normalize")
 load(":cell_libraries.bzl", "CELL_LIBRARIES")
 
-def declare_cell_library(workspace_name, name, default_input_driver_cell = "", default_output_load = ""):
+def declare_cell_library(name, default_input_driver_cell = "", default_output_load = ""):
     """This should be called from the BUILD file of a cell library workspace. It sets up the targets for the generated files of the given library.
 
     Args:
-      workspace_name: The name of the skywater workspace
       name: The name of the top level standard cell library
       default_input_driver_cell: Cell to assume drives primary input nets
       default_output_load: Cell to assume is being driven by each primary output
@@ -58,7 +57,7 @@ def declare_cell_library(workspace_name, name, default_input_driver_cell = "", d
             standard_cell_name = name,
             with_ccsnoise = ccsnoise,
             with_leakage = leakage,
-            standard_cell_root = "external/{}".format(workspace_name),
+            standard_cell_root = ".",
         )
 
         # Library with only just a single corner.
